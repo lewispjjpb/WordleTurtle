@@ -1,0 +1,19 @@
+{
+  "name": "Wordle Turtle",
+  "description": "Check to see if your word is already used",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "src/hello.html",
+    "default_icon": "src/images/default_icon.png"
+  },
+  "icons": {
+    "16": "src/images/default_icon.png",
+    "32": "src/images/default_icon.png",
+    "48": "src/images/default_icon.png",
+    "128": "src/images/default_icon.png"
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  }
+}
