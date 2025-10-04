@@ -75,21 +75,21 @@ async function checkWordWithAPI(word) {
         return;
     }
 
-    isApiCallInProgress = true;
-    lastCheckedWord = word;
+    let isApiCallInProgress = true;
+    let lastCheckedWord = word;
 
     try {
         console.log(`Checking word: ${word}`);
 
         // Replace with your actual API endpoint
-        const response = await fetch(`https://your-api-endpoint.com/check-word`, {
-            method: 'POST',
+        const response = await fetch(`https://wordle-list.malted.dev/valid`, {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
                 // Add any authentication headers if needed
                 // 'Authorization': 'Bearer YOUR_TOKEN'
             },
-            body: JSON.stringify({
+            query: JSON.stringify({
                 word: word,
                 // Add any other data you need to send
             })
