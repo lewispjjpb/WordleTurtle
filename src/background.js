@@ -2,20 +2,6 @@ const extensions = 'https://developer.chrome.com/docs/extensions';
 const webstore = 'https://developer.chrome.com/docs/webstore';
 const wordle = 'https://www.nytimes.com/games/wordle'
 
-chrome.runtime.onInstalled.addListener(() => {
-    console.log('Extension installed/updated');
-
-    // Add error handling
-    if (chrome.action) {
-        chrome.action.setBadgeText({
-            text: "OFF",
-        });
-        console.log('Badge text set to OFF');
-    } else {
-        console.error('chrome.action is not available');
-    }
-});
-
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.action.setBadgeText({
@@ -41,34 +27,73 @@ chrome.action.onClicked.addListener(async (tab) => {
     
     if (nextState === "ON") {
         // Insert the CSS file when the user turns the extension on
-        await applySpecialStyling(tab)
+        await startObserver(tab)
     } else if (nextState === "OFF") {
         // Remove the CSS file when the user turns the extension off
         await removeSpecialStyling(tab)
     }
 });
 
-// Check for filled tiles in the current row
-function checkWordleState() {
-    // Look for the current row (active row)
-    const gameRows = document.querySelectorAll('[data-state]');
-    const currentRow = Array.from(gameRows).find(row => {
-        const tiles = row.querySelectorAll('[data-state]');
-        return tiles.length > 0 && tiles[0].getAttribute('data-state') === 'empty';
+
+// Set up the MutationObserver
+function startObserver() {
+    const gameArea = document.querySelector('.App-module_game__yruqo') ||
+        document.querySelector('[role="img"]') ||
+        document.querySelector('game-app') ||
+        document.body;
+
+    const observer = new MutationObserver((mutations) => {
+        let shouldCheck = false;
+
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' ||
+                mutation.type === 'characterData' ||
+                (mutation.type === 'attributes' && mutation.attributeName === 'data-state')) {
+                shouldCheck = true;
+            }
+        });
+
+        if (shouldCheck) {
+            // Use debouncing to avoid too many API calls
+            clearTimeout(checkWordleState.timeoutId);
+            checkWordleState.timeoutId = setTimeout(checkWordleState, 500);
+        }
     });
 
-    if (currentRow) {
-        const tiles = currentRow.querySelectorAll('[data-state]');
-        const filledTiles = Array.from(tiles).filter(tile =>
-            tile.textContent.trim() !== '' &&
-            tile.getAttribute('data-state') === 'tbd' // "to be determined"
-        );
+    observer.observe(gameArea, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+        attributeFilter: ['data-state']
+    });
 
-        return filledTiles.length === 5;
-    }
-
-    return false;
+    console.log('Wordle Turtle observer started');
 }
+
+// Check for filled tiles in the current row
+function checkWordleState() {
+    const currentWord = getCurrentWord();
+
+    if (currentWord && currentWord.length === 5) {
+        // Only make API call if this is a new word
+        if (currentWord !== lastCheckedWord) {
+            checkWordWithAPI(currentWord);
+        }
+    } else {
+        // If no 5-letter word is present, remove styling and reset
+        if (lastCheckedWord) {
+            removeSpecialStyling();
+            lastCheckedWord = '';
+            // Clear any feedback
+            const feedbackEl = document.getElementById('wordle-turtle-feedback');
+            if (feedbackEl) {
+                feedbackEl.style.opacity = '0';
+            }
+        }
+    }
+}
+
 
 async function checkWordWithAPI(word) {
     if (isApiCallInProgress || word === lastCheckedWord) {
@@ -114,8 +139,43 @@ async function checkWordWithAPI(word) {
     }
 }
 
+function getCurrentWord() {
+    // Find the current active row
+    const rows = document.querySelectorAll('[data-testid="row"]');
 
+    for (let row of rows) {
+        const tiles = row.querySelectorAll('[data-testid="tile"]');
+        let word = '';
+        let isCurrentRow = false;
 
+        // Check if this row has letters but hasn't been evaluated
+        for (let tile of tiles) {
+            const state = tile.getAttribute('data-state');
+            const letter = tile.textContent.trim();
+
+            if (letter) {
+                word += letter.toLowerCase();
+            }
+
+            // If any tile is evaluated (correct/present/absent), this isn't the current row
+            if (state === 'correct' || state === 'present' || state === 'absent') {
+                break;
+            }
+
+            // If we have letters but no evaluation, this is the current row
+            if (letter && (state === 'empty' || state === 'tbd' || !state)) {
+                isCurrentRow = true;
+            }
+        }
+
+        // Return the word if it's the current row and has exactly 5 letters
+        if (isCurrentRow && word.length === 5) {
+            return word;
+        }
+    }
+
+    return null;
+}
 
 function handleAPIResponse(word, data) {
     // Example: Check if the word meets your criteria
