@@ -2,6 +2,3 @@
 body[data-wordle-status="used"] .Tile-module_tile__UWEHN[data-state="tbd"] {
     background-color: #d102b9 !important;
 }
-
-/* Keep your existing styles for other tile states */
-gi

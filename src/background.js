@@ -50,7 +50,6 @@ chrome.action.onClicked.addListener(async (tab) => {
                         await chrome.tabs.sendMessage(tab.id, {
                             action: isObserving ? 'startObserving' : 'stopObserving'
                         });
-                        console.log('Successfully communicated after script injection');
                     } catch (retryError) {
                         console.error('Still failed to communicate after injection:', retryError);
                         // Reset state since we couldn't activate
@@ -79,12 +78,10 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // Handle messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.debug('Received message from content script:', message);
-    
+
     if (message.action === 'checkWord') {
         handleWordCheck(message.word, sender.tab.id)
             .then(result => {
-                console.debug('Sending response to content script:', result);
                 return sendResponse(result)
             })
             .catch(error => sendResponse({ success: false, error: error.message }));
@@ -122,8 +119,7 @@ async function handleWordCheck(word, tabId) {
                 }
                 
                 const htmlText = await response.text();
-                console.log('HTML fetched, sending to content script for parsing...');
-                
+
                 // Send HTML to content script for parsing
                 const parseResult = await chrome.tabs.sendMessage(tabId, {
                     action: 'parseWordListHTML',
@@ -132,7 +128,6 @@ async function handleWordCheck(word, tabId) {
                 
                 if (parseResult && parseResult.success) {
                     wordList = new Set(parseResult.words);
-                    console.log(`Loaded ${wordList.size} previously used Wordle answers`);
                 } else {
                     throw new Error(parseResult ? parseResult.error : 'Failed to parse word list');
                 }
@@ -157,9 +152,7 @@ async function handleWordCheck(word, tabId) {
         
         // Check if word has been used as a previous Wordle answer
         const wasUsed = wordList.has(word.toLowerCase());
-        console.debug({word, wordList, wasUsed});
-        console.log(`Word "${word}" ${wasUsed ? 'has been used before' : 'has not been used before'}`);
-        
+
         return {
             success: true,
             data: {

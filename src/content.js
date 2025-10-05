@@ -8,43 +8,34 @@
     let isObservingActive = false;
 
     function getCurrentWord() {
-        console.log('Looking for current word...');
 
         // Find all tiles with tbd state (these are only in the active row)
         const tbdTiles = document.querySelectorAll('.Tile-module_tile__UWEHN[data-state="tbd"]');
-        console.log(`Found ${tbdTiles.length} TBD tiles`);
-
         // If we don't have exactly 5 TBD tiles, there's no complete word to check
         if (tbdTiles.length !== 5) {
-            console.log(`Expected 5 TBD tiles, found ${tbdTiles.length}`);
             return null;
         }
 
         // Extract letters from the tiles
         let word = '';
         for (let i = 0; i < tbdTiles.length; i++) {
-            console.debug(`Checking TBD tile ${i}`);
             const letter = tbdTiles[i].textContent.trim();
-            console.log(`TBD Tile ${i}: letter="${letter}"`);
 
             if (letter) {
                 word += letter.toLowerCase();
             } else {
                 // If any tile is empty, we don't have a complete word
-                console.log(`Tile ${i} is empty, word incomplete`);
                 return null;
             }
         }
 
-        console.log(`Complete word found: ${word}`);
         return word;
     }
 
     // Parse word list from HTML
     function parseWordListFromHTML(htmlText) {
         try {
-            console.log('Parsing word list from HTML...');
-            
+
             // Create a temporary div to parse the HTML
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = htmlText;
@@ -64,7 +55,6 @@
                 .filter(word => word && word.length > 0) // Remove empty strings
                 .map(word => word.toLowerCase().split(' ')[0]); // Convert to lowercase for consistency
             
-            console.log(`Parsed ${words.length} words from HTML`);
             return { success: true, words: words };
             
         } catch (error) {
@@ -74,7 +64,6 @@
     }
 
     async function checkWordWithBackground(word) {
-        console.debug(`Checking word: ${word}`);
         if (isApiCallInProgress || word === lastCheckedWord) {
             return;
         }
@@ -89,7 +78,6 @@
             });
             
             if (response && response.success) {
-                console.debug({response})
                 handleAPIResponse(word, response.data);
             } else {
                 handleAPIError(word, response ? response.error : 'Unknown error');
@@ -104,8 +92,7 @@
     }
     
     function handleAPIResponse(word, data) {
-        console.log(`API Response for "${word}":`, data);
-        
+
         // Only care about whether the word has been used before
         if (data.used === true) {
             // Word has been used before - apply warning styling
@@ -191,10 +178,8 @@
     }
     
     function checkWordleState() {
-        console.debug('Checking Wordle state ', isObservingActive);
         if (!isObservingActive) return;
         const currentWord = getCurrentWord();
-        console.debug('Wordle state is active ', currentWord);
 
         if (currentWord && currentWord.length === 5) {
             if (currentWord !== lastCheckedWord) {
@@ -213,7 +198,6 @@
     }
     
     function startObserver() {
-        console.debug('Starting Wordle Turtle observerrrrr');
         if (observer) {
             observer.disconnect();
         }
