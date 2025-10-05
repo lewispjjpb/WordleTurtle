@@ -1,222 +1,201 @@
-const extensions = 'https://developer.chrome.com/docs/extensions';
-const webstore = 'https://developer.chrome.com/docs/webstore';
-const wordle = 'https://www.nytimes.com/games/wordle'
+// Background script - handles the extension button and messaging
+let isObserving = false;
+let wordList = null; // Cache the word list
+let isLoadingWords = false;
 
+// Handle extension icon click
+chrome.action.onClicked.addListener(async (tab) => {
+    try {
+        // Check if the current tab is a Wordle page
+        if (!tab.url.includes('nytimes.com')) {
+            console.log('Not on a supported Wordle page');
+            chrome.action.setBadgeText({ text: "N/A" });
+            chrome.action.setBadgeBackgroundColor({ color: "#666666" });
+            return;
+        }
+        
+        // Toggle the observing state
+        isObserving = !isObserving;
+        
+        // Update badge to show current state
+        chrome.action.setBadgeText({
+            text: isObserving ? "ON" : "OFF"
+        });
+        
+        chrome.action.setBadgeBackgroundColor({
+            color: isObserving ? "#22c55e" : "#ef4444"
+        });
+        
+        try {
+            // Send message to content script to start/stop observing
+            await chrome.tabs.sendMessage(tab.id, {
+                action: isObserving ? 'startObserving' : 'stopObserving'
+            });
+            
+            console.log(isObserving ? 'Started observing Wordle' : 'Stopped observing Wordle');
+            
+        } catch (messageError) {
+            console.error('Failed to communicate with content script:', messageError);
+            
+            // Try to inject the content script if it's not already there
+            try {
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['src/content.js']
+                });
+                
+                // Try sending the message again after a short delay
+                setTimeout(async () => {
+                    try {
+                        await chrome.tabs.sendMessage(tab.id, {
+                            action: isObserving ? 'startObserving' : 'stopObserving'
+                        });
+                        console.log('Successfully communicated after script injection');
+                    } catch (retryError) {
+                        console.error('Still failed to communicate after injection:', retryError);
+                        // Reset state since we couldn't activate
+                        isObserving = false;
+                        chrome.action.setBadgeText({ text: "ERR" });
+                        chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+                    }
+                }, 100);
+                
+            } catch (injectionError) {
+                console.error('Failed to inject content script:', injectionError);
+                // Reset state since we couldn't activate
+                isObserving = false;
+                chrome.action.setBadgeText({ text: "ERR" });
+                chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error toggling observer:', error);
+        isObserving = false;
+        chrome.action.setBadgeText({ text: "ERR" });
+        chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+    }
+});
+
+// Handle messages from content script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.debug('Received message from content script:', message);
+    
+    if (message.action === 'checkWord') {
+        handleWordCheck(message.word, sender.tab.id)
+            .then(result => sendResponse(result))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true; // Keep message channel open for async response
+        
+    } else if (message.action === 'parseWordList') {
+        // Content script is asking us to parse HTML
+        parseWordListFromHTML(message.html)
+            .then(result => sendResponse(result))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+});
+
+// Handle word checking workflow
+async function handleWordCheck(word, tabId) {
+    try {
+        console.log(`Checking word: ${word}`);
+        
+        // If we don't have the word list yet, we need to load it
+        if (!wordList && !isLoadingWords) {
+            isLoadingWords = true;
+            
+            try {
+                // Fetch the HTML
+                const response = await fetch('https://www.fiveforks.com/wordle', {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch word list: ${response.status}`);
+                }
+                
+                const htmlText = await response.text();
+                console.log('HTML fetched, sending to content script for parsing...');
+                
+                // Send HTML to content script for parsing
+                const parseResult = await chrome.tabs.sendMessage(tabId, {
+                    action: 'parseWordListHTML',
+                    html: htmlText
+                });
+                
+                if (parseResult && parseResult.success) {
+                    wordList = new Set(parseResult.words);
+                    console.log(`Loaded ${wordList.size} words from word list`);
+                } else {
+                    throw new Error(parseResult ? parseResult.error : 'Failed to parse word list');
+                }
+                
+            } finally {
+                isLoadingWords = false;
+            }
+        }
+        
+        // Wait for word list to be loaded if another request is loading it
+        while (isLoadingWords) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        if (!wordList) {
+            return { 
+                success: false, 
+                error: 'Word list not available',
+                data: { valid: false, used: false }
+            };
+        }
+        
+        // Check if word exists in the list
+        const isValidWord = wordList.has(word.toLowerCase());
+        
+        console.log(`Word "${word}" is ${isValidWord ? 'valid' : 'invalid'}`);
+        
+        return {
+            success: true,
+            data: {
+                valid: isValidWord,
+                used: !isValidWord, // For now, treat invalid words as "used" to show warning
+                word: word
+            }
+        };
+        
+    } catch (error) {
+        console.error('Error checking word:', error);
+        return { 
+            success: false, 
+            error: error.message,
+            data: { valid: false, used: false },
+            word: word 
+        };
+    }
+}
+
+// Reset badge when tab changes
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+        const tab = await chrome.tabs.get(activeInfo.tabId);
+        if (tab.url && !tab.url.includes('nytimes.com')) {
+            chrome.action.setBadgeText({ text: "N/A" });
+            chrome.action.setBadgeBackgroundColor({ color: "#666666" });
+            isObserving = false;
+        }
+    } catch (error) {
+        // Ignore errors when getting tab info
+    }
+});
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.action.setBadgeText({
-        text: "OFF",
+        text: "OFF"
+    });
+    chrome.action.setBadgeBackgroundColor({
+        color: "#ef4444"
     });
 });
-
-chrome.action.onClicked.addListener(async (tab) => {
-    let nextState = 'OFF'; // Initialize with default value
-    
-    if (tab.url.startsWith(wordle)) {
-        // Retrieve the action badge to check if the extension is 'ON' or 'OFF'
-        const prevState = await chrome.action.getBadgeText({ tabId: tab.id });
-        // Next state will always be the opposite
-        nextState = prevState === 'ON' ? 'OFF' : 'ON';
-
-        // Set the action badge to the next state
-        await chrome.action.setBadgeText({
-            tabId: tab.id,
-            text: nextState,
-        });
-    }
-    
-    if (nextState === "ON") {
-        // Insert the CSS file when the user turns the extension on
-        await startObserver(tab)
-    } else if (nextState === "OFF") {
-        // Remove the CSS file when the user turns the extension off
-        await removeSpecialStyling(tab)
-    }
-});
-
-
-// Set up the MutationObserver
-function startObserver() {
-    const gameArea = document.querySelector('.App-module_game__yruqo') ||
-        document.querySelector('[role="img"]') ||
-        document.querySelector('game-app') ||
-        document.body;
-
-    const observer = new MutationObserver((mutations) => {
-        let shouldCheck = false;
-
-        mutations.forEach((mutation) => {
-            if (mutation.type === 'childList' ||
-                mutation.type === 'characterData' ||
-                (mutation.type === 'attributes' && mutation.attributeName === 'data-state')) {
-                shouldCheck = true;
-            }
-        });
-
-        if (shouldCheck) {
-            // Use debouncing to avoid too many API calls
-            clearTimeout(checkWordleState.timeoutId);
-            checkWordleState.timeoutId = setTimeout(checkWordleState, 500);
-        }
-    });
-
-    observer.observe(gameArea, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-        attributeFilter: ['data-state']
-    });
-
-    console.log('Wordle Turtle observer started');
-}
-
-// Check for filled tiles in the current row
-function checkWordleState() {
-    const currentWord = getCurrentWord();
-
-    if (currentWord && currentWord.length === 5) {
-        // Only make API call if this is a new word
-        if (currentWord !== lastCheckedWord) {
-            checkWordWithAPI(currentWord);
-        }
-    } else {
-        // If no 5-letter word is present, remove styling and reset
-        if (lastCheckedWord) {
-            removeSpecialStyling();
-            lastCheckedWord = '';
-            // Clear any feedback
-            const feedbackEl = document.getElementById('wordle-turtle-feedback');
-            if (feedbackEl) {
-                feedbackEl.style.opacity = '0';
-            }
-        }
-    }
-}
-
-
-async function checkWordWithAPI(word) {
-    if (isApiCallInProgress || word === lastCheckedWord) {
-        return;
-    }
-
-    let isApiCallInProgress = true;
-    let lastCheckedWord = word;
-
-    try {
-        console.log(`Checking word: ${word}`);
-
-        // Replace with your actual API endpoint
-        const response = await fetch(`https://wordle-list.malted.dev/valid`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                // Add any authentication headers if needed
-                // 'Authorization': 'Bearer YOUR_TOKEN'
-            },
-            query: JSON.stringify({
-                word: word,
-                // Add any other data you need to send
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`API call failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('API response:', data);
-
-        // Process the API response and apply styling based on condition
-        handleAPIResponse(word, data);
-
-    } catch (error) {
-        console.error('Error calling API:', error);
-        // Handle error (maybe show user feedback)
-        handleAPIError(word, error);
-    } finally {
-        isApiCallInProgress = false;
-    }
-}
-
-function getCurrentWord() {
-    // Find the current active row
-    const rows = document.querySelectorAll('[data-testid="row"]');
-
-    for (let row of rows) {
-        const tiles = row.querySelectorAll('[data-testid="tile"]');
-        let word = '';
-        let isCurrentRow = false;
-
-        // Check if this row has letters but hasn't been evaluated
-        for (let tile of tiles) {
-            const state = tile.getAttribute('data-state');
-            const letter = tile.textContent.trim();
-
-            if (letter) {
-                word += letter.toLowerCase();
-            }
-
-            // If any tile is evaluated (correct/present/absent), this isn't the current row
-            if (state === 'correct' || state === 'present' || state === 'absent') {
-                break;
-            }
-
-            // If we have letters but no evaluation, this is the current row
-            if (letter && (state === 'empty' || state === 'tbd' || !state)) {
-                isCurrentRow = true;
-            }
-        }
-
-        // Return the word if it's the current row and has exactly 5 letters
-        if (isCurrentRow && word.length === 5) {
-            return word;
-        }
-    }
-
-    return null;
-}
-
-function handleAPIResponse(word, data) {
-    // Example: Check if the word meets your criteria
-    if (data.shouldHighlight || data.isSpecialWord || data.meetsCriteria) {
-        applySpecialStyling(word, data);
-    } else {
-        removeSpecialStyling();
-    }
-
-    // You could also show additional UI feedback
-    if (data.message) {
-        showUserFeedback(data.message);
-    }
-}
-
-async function applySpecialStyling(tab) {
-    await chrome.scripting.insertCSS({
-        files: ["src/highlight-mode.css"],
-        target: { tabId: tab.id },
-    });
-}
-
-async function removeSpecialStyling(tab) {
-    await chrome.scripting.removeCSS({
-        files: ["src/highlight-mode.css"],
-        target: { tabId: tab.id },
-    })
-}
-
-
-function handleAPIError(word, error) {
-    console.error(`Failed to check word "${word}":`, error);
-    // Maybe show a subtle error indicator to the user
-    showUserFeedback('Unable to check word', 'error');
-}
-
-function showUserFeedback(message, type = 'success') {
-    // Example: Show a toast notification
-    const toast = document.createElement('div');
-    toast.classList.add('toast');
-    toast.classList.add(type);
-    toast.textContent = message;
-    document.body.appendChild(toast);
-}

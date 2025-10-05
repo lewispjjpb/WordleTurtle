@@ -12,6 +12,13 @@
   "background": {
     "service_worker": "src/background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["*://*.nytimes.com/*"],
+      "js": ["src/content.js"],
+      "css": ["src/highlight-mode.css"]
+    }
+  ],
   "action": {
     "default_icon": {
       "16": "src/images/default_icon.png",
@@ -20,5 +27,8 @@
       "128": "src/images/default_icon.png"
     }
   },
+  "host_permissions": [
+    "https://www.fiveforks.com/wordle"
+  ],
   "permissions": ["activeTab", "scripting"]
 }
