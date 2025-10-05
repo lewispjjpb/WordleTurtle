@@ -1,10 +1,7 @@
-
-
-.Tile-module_tile__UWEHN[data-state=present] {
-    background-color: blue !important;
-    /*color: "black";*/
+/* Only apply purple styling to tbd tiles when a used word is detected */
+body[data-wordle-status="used"] .Tile-module_tile__UWEHN[data-state="tbd"] {
+    background-color: #d102b9 !important;
 }
 
-.Tile-module_tile__UWEHN[data-state=tbd] {
-    background-color: violet !important;
-}
+/* Keep your existing styles for other tile states */
+gi

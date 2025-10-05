@@ -62,7 +62,7 @@
                 .split(/<br\s*\/?>/i) // Split on <br> or <br/> tags (case insensitive)
                 .map(word => word.trim()) // Remove whitespace
                 .filter(word => word && word.length > 0) // Remove empty strings
-                .map(word => word.toLowerCase()); // Convert to lowercase for consistency
+                .map(word => word.toLowerCase().split(' ')[0]); // Convert to lowercase for consistency
             
             console.log(`Parsed ${words.length} words from HTML`);
             return { success: true, words: words };
@@ -89,6 +89,7 @@
             });
             
             if (response && response.success) {
+                console.debug({response})
                 handleAPIResponse(word, response.data);
             } else {
                 handleAPIError(word, response ? response.error : 'Unknown error');
@@ -103,17 +104,15 @@
     }
     
     function handleAPIResponse(word, data) {
-        // Based on the API response, check if word has been used before
-        if (data.used === true || data.isUsed === true || data.previouslyUsed === true) {
+        console.log(`API Response for "${word}":`, data);
+        
+        // Only care about whether the word has been used before
+        if (data.used === true) {
             // Word has been used before - apply warning styling
             applySpecialStyling(word, 'used');
             showUserFeedback(`"${word.toUpperCase()}" has been used before!`, 'warning');
-        } else if (data.valid === false || data.isValid === false) {
-            // Word is not a valid Wordle word
-            applySpecialStyling(word, 'invalid');
-            showUserFeedback(`"${word.toUpperCase()}" is not a valid word`, 'error');
         } else {
-            // Word is valid and hasn't been used - remove any special styling
+            // Word hasn't been used before - no special styling
             removeSpecialStyling();
             showUserFeedback(`"${word.toUpperCase()}" looks good!`, 'success');
         }

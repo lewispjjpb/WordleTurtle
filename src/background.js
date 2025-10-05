@@ -83,7 +83,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     if (message.action === 'checkWord') {
         handleWordCheck(message.word, sender.tab.id)
-            .then(result => sendResponse(result))
+            .then(result => {
+                console.debug('Sending response to content script:', result);
+                return sendResponse(result)
+            })
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true; // Keep message channel open for async response
         
@@ -129,7 +132,7 @@ async function handleWordCheck(word, tabId) {
                 
                 if (parseResult && parseResult.success) {
                     wordList = new Set(parseResult.words);
-                    console.log(`Loaded ${wordList.size} words from word list`);
+                    console.log(`Loaded ${wordList.size} previously used Wordle answers`);
                 } else {
                     throw new Error(parseResult ? parseResult.error : 'Failed to parse word list');
                 }
@@ -148,20 +151,19 @@ async function handleWordCheck(word, tabId) {
             return { 
                 success: false, 
                 error: 'Word list not available',
-                data: { valid: false, used: false }
+                data: { used: false }
             };
         }
         
-        // Check if word exists in the list
-        const isValidWord = wordList.has(word.toLowerCase());
-        
-        console.log(`Word "${word}" is ${isValidWord ? 'valid' : 'invalid'}`);
+        // Check if word has been used as a previous Wordle answer
+        const wasUsed = wordList.has(word.toLowerCase());
+        console.debug({word, wordList, wasUsed});
+        console.log(`Word "${word}" ${wasUsed ? 'has been used before' : 'has not been used before'}`);
         
         return {
             success: true,
             data: {
-                valid: isValidWord,
-                used: !isValidWord, // For now, treat invalid words as "used" to show warning
+                used: wasUsed,
                 word: word
             }
         };
@@ -171,7 +173,7 @@ async function handleWordCheck(word, tabId) {
         return { 
             success: false, 
             error: error.message,
-            data: { valid: false, used: false },
+            data: { used: false },
             word: word 
         };
     }
