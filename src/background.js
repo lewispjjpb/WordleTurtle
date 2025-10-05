@@ -110,7 +110,7 @@ async function handleWordCheck(word, tabId) {
                 const response = await fetch('https://www.fiveforks.com/wordle', {
                     method: 'GET',
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': 'Wordle-Turtle-Extension/1.0'
                     }
                 });
                 
